@@ -1,0 +1,10 @@
+{
+  "description": "Discover and plan events effortlessly with a premium marketplace that connects users to top service providers, ensuring a seamless event experience.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
