@@ -522,11 +522,9 @@ export const registerPlanning = (app, { requireUser, requireRole }) => {
     try {
       const result = await withTransaction(async (connection) => {
         const [rows] = await connection.query(
-          `SELECT q.id, q.status, q.event_id, q.service_id, q.client_id, q.selection_json,
-            q.issued_cents, q.conditions_text, DATE_FORMAT(q.valid_until, '%Y-%m-%d') AS valid_until,
-            pi.estimated_cents
+          `SELECT q.id, q.status, q.event_id, q.service_id, q.client_id,
+            q.issued_cents, q.conditions_text, DATE_FORMAT(q.valid_until, '%Y-%m-%d') AS valid_until
            FROM quote_requests q
-           LEFT JOIN planner_items pi ON pi.client_id = q.client_id AND pi.event_id = q.event_id AND pi.service_id = q.service_id
            WHERE q.id = ? AND q.client_id = ?
            LIMIT 1 FOR UPDATE`,
           [quoteId, request.account.id],
@@ -538,14 +536,23 @@ export const registerPlanning = (app, { requireUser, requireRole }) => {
         if (quote.status === 'rechazada' || quote.status === 'cancelada') {
           return { status: 409, message: 'No puedes aceptar una cotización rechazada o cancelada.' }
         }
+        if (quote.status === 'recibida') {
+          return { status: 409, message: 'El proveedor todavía no emite la cotización. Espera su respuesta antes de contratar.' }
+        }
+        if (quote.status === 'modificacion_solicitada') {
+          return { status: 409, message: 'Pediste cambios. Espera la nueva cotización del proveedor antes de contratar.' }
+        }
         const issuedCents = quote.issued_cents === null || quote.issued_cents === undefined ? null : Number(quote.issued_cents)
-        const estimatedCents = quote.estimated_cents === null || quote.estimated_cents === undefined ? null : Number(quote.estimated_cents)
-        const amountCents = issuedCents !== null ? issuedCents : estimatedCents
+        const isIssued = quote.status === 'emitida' || quote.status === 'cotizada'
+        if (!isIssued || issuedCents === null) {
+          return { status: 409, message: 'Solo puedes contratar una cotización emitida, con monto formal del proveedor.' }
+        }
         const validUntil = dateLabel(quote.valid_until)
-        if (issuedCents !== null && validUntil && validUntil < todayLabel()) {
+        if (validUntil && validUntil < todayLabel()) {
           return { status: 409, message: 'Esta cotización venció. Pide al proveedor que emita una vigencia nueva.' }
         }
-        const conditions = (String(quote.conditions_text || '').trim() || String(quote.selection_json || '')).slice(0, 500)
+        const amountCents = issuedCents
+        const conditions = String(quote.conditions_text || '').trim().slice(0, 500)
         const [existing] = await connection.query(
           'SELECT id FROM service_contracts WHERE client_id = ? AND event_id = ? AND service_id = ? LIMIT 1 FOR UPDATE',
           [request.account.id, quote.event_id, quote.service_id],

@@ -291,6 +291,29 @@ export const priceModeLabel = (mode: PriceMode) => {
   return 'Sujeto a cotización'
 }
 
+export const isQuoteExpired = (validUntil: string | null) => {
+  if (!validUntil) return false
+  const today = new Date()
+  const month = String(today.getMonth() + 1).padStart(2, '0')
+  const day = String(today.getDate()).padStart(2, '0')
+  return validUntil < `${today.getFullYear()}-${month}-${day}`
+}
+
+export const canAcceptQuote = (quote: Pick<QuoteRecord, 'status' | 'issuedCents' | 'validUntil'>) => {
+  const isIssued = quote.status === 'emitida' || quote.status === 'cotizada'
+  return isIssued && quote.issuedCents !== null && !isQuoteExpired(quote.validUntil)
+}
+
+export const acceptBlockReason = (quote: Pick<QuoteRecord, 'status' | 'issuedCents' | 'validUntil'>) => {
+  if (quote.status === 'recibida') return 'Espera la cotización del proveedor. Aún no hay un monto formal para contratar.'
+  if (quote.status === 'modificacion_solicitada') return 'Pediste cambios. Espera la nueva cotización del proveedor antes de contratar.'
+  if ((quote.status === 'emitida' || quote.status === 'cotizada') && isQuoteExpired(quote.validUntil)) {
+    return 'Esta cotización venció. Pide al proveedor que actualice la vigencia.'
+  }
+  if (quote.issuedCents === null) return 'Esta cotización no tiene un monto formal del proveedor.'
+  return 'Solo puedes contratar una cotización emitida y vigente.'
+}
+
 export const formatQuoteAmount = (priceCents: number, currency = 'MXN') => {
   const hasCents = priceCents % 100 !== 0
   try {

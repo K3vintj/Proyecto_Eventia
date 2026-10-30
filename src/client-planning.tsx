@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { CatalogError, formatPrice } from './catalog-api'
-import { createEvent, fetchEvents, fetchPlanner, fetchQuotes, formatEventDate, formatQuoteAmount, issueQuote, type ClientEvent, type PlannerEvent, type QuoteRecord } from './venue-api'
+import { createEvent, fetchEvents, fetchPlanner, fetchQuotes, formatEventDate, formatQuoteAmount, isQuoteExpired, issueQuote, type ClientEvent, type PlannerEvent, type QuoteRecord } from './venue-api'
 
 const statusLabel = (status: string) => {
   if (status === 'recibida') return 'Recibida'
@@ -45,14 +45,6 @@ const selectionLine = (selection: QuoteRecord['selection']) => {
     ...selection.menuNames,
     ...selection.addonNames,
   ].filter(Boolean).join(' · ')
-}
-
-const isPastDate = (value: string | null) => {
-  if (!value) return false
-  const today = new Date()
-  const month = String(today.getMonth() + 1).padStart(2, '0')
-  const day = String(today.getDate()).padStart(2, '0')
-  return value < `${today.getFullYear()}-${month}-${day}`
 }
 
 const pesosInput = (cents: number | null | undefined) => {
@@ -105,7 +97,7 @@ export const QuoteOffer = ({ quote, audience = 'client' }: { quote: QuoteRecord;
       </div>
     )
   }
-  const expired = isPastDate(quote.validUntil)
+  const expired = isQuoteExpired(quote.validUntil)
   return (
     <div className={`quote-offer${expired ? ' is-expired' : ''}`}>
       <span>Cotización emitida · {quote.currency || 'MXN'}</span>

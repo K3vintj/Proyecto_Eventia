@@ -2,7 +2,9 @@ import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type Keybo
 import { CatalogError, formatPrice } from './catalog-api'
 import { QuoteOffer } from './client-planning'
 import {
+  acceptBlockReason,
   acceptQuote,
+  canAcceptQuote,
   createEvent,
   fetchContracts,
   fetchEvents,
@@ -331,7 +333,9 @@ export const EventsHub = ({ onNavigate }: EventsHubProps) => {
   }
 
   const handleAccept = async (quote: QuoteRecord) => {
-    if (!window.confirm('Al aceptar se generará la contratación con el importe estimado actual. ¿Continuar?')) return
+    if (!canAcceptQuote(quote) || quote.issuedCents === null) return
+    const amount = formatQuoteAmount(quote.issuedCents, quote.currency)
+    if (!window.confirm(`Al aceptar se contratará este servicio por ${amount}. ¿Continuar?`)) return
     setStatus('')
     try {
       await acceptQuote(quote.id)
@@ -613,10 +617,21 @@ export const EventsHub = ({ onNavigate }: EventsHubProps) => {
                 <p>{activeQuote.notes || 'Sin observaciones del cliente.'}</p>
                 {activeQuote.selection ? <p>{selectionText(activeQuote.selection)}</p> : null}
                 {activeQuote.status !== 'aceptada' && activeQuote.status !== 'rechazada' && activeQuote.status !== 'cancelada' ? (
-                  <div className="mp-card-actions">
-                    <button className="search-button" type="button" onClick={() => void handleAccept(activeQuote)}>Aceptar y contratar</button>
-                    <button className="outline-button compact" type="button" onClick={() => void handleReject(activeQuote)}>Rechazar</button>
-                  </div>
+                  <>
+                    {canAcceptQuote(activeQuote) ? (
+                      <div className="mp-card-actions">
+                        <button className="search-button" type="button" onClick={() => void handleAccept(activeQuote)}>Aceptar y contratar</button>
+                        <button className="outline-button compact" type="button" onClick={() => void handleReject(activeQuote)}>Rechazar</button>
+                      </div>
+                    ) : (
+                      <>
+                        <p className="quote-feedback is-wait" role="status">{acceptBlockReason(activeQuote)}</p>
+                        <div className="mp-card-actions">
+                          <button className="outline-button compact" type="button" onClick={() => void handleReject(activeQuote)}>Rechazar</button>
+                        </div>
+                      </>
+                    )}
+                  </>
                 ) : null}
                 {activeQuote.status !== 'aceptada' && activeQuote.status !== 'rechazada' && activeQuote.status !== 'cancelada' ? (
                   <div className="eh-mod-box">

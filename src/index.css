@@ -596,6 +596,7 @@ footer { background: #0d1830; color: white; padding: 70px 7% 25px; }.footer-main
 .quote-feedback { margin: 0; border-radius: 12px; padding: 10px 12px; font-size: 14px; line-height: 1.5; }
 .quote-feedback.is-error { color: #9f2d2d; background: #fff0ed; }
 .quote-feedback.is-ok { color: var(--green); background: #eaf8f3; }
+.quote-feedback.is-wait { color: var(--navy); background: var(--cream); }
 .venue-page :focus-visible, .venue-dialog :focus-visible, .planning-panel :focus-visible { outline: 2px solid var(--violet); outline-offset: 3px; }
 .banquet-grid, .banquet-menu { display: grid; gap: 10px; }
 .banquet-choice { display: grid; gap: 6px; width: 100%; text-align: left; border: 1px solid var(--line); border-radius: 16px; padding: 14px; background: var(--white); color: var(--navy); cursor: pointer; }
