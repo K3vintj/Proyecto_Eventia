@@ -96,6 +96,44 @@ const readMoney = (value) => {
   return amount
 }
 
+const readIssuedAmount = (value) => {
+  const amount = Number(value)
+  if (!Number.isInteger(amount) || amount < 1 || amount > 1000000000) return undefined
+  return amount
+}
+
+const todayLabel = () => {
+  const today = new Date()
+  const month = String(today.getMonth() + 1).padStart(2, '0')
+  const day = String(today.getDate()).padStart(2, '0')
+  return `${today.getFullYear()}-${month}-${day}`
+}
+
+const canIssueQuote = (status) => status === 'recibida' || status === 'modificacion_solicitada' || status === 'emitida'
+
+const toQuote = (row) => ({
+  id: row.id,
+  notes: row.notes || '',
+  status: row.status || 'recibida',
+  requestedOn: dateLabel(row.requested_on),
+  eventId: row.event_id === null || row.event_id === undefined ? null : Number(row.event_id),
+  eventName: row.event_name || '',
+  eventDate: dateLabel(row.event_date),
+  guestCount: row.guest_count === null ? null : Number(row.guest_count),
+  serviceId: row.service_id,
+  serviceTitle: row.service_title,
+  slug: row.slug,
+  clientName: row.client_name,
+  providerName: row.business_name || row.provider_name,
+  selection: selectionSummary(row.selection_json),
+  issuedCents: row.issued_cents === null || row.issued_cents === undefined ? null : Number(row.issued_cents),
+  currency: row.currency || 'MXN',
+  conditions: row.conditions_text || '',
+  validUntil: dateLabel(row.valid_until),
+  issuedDetail: row.issued_detail || '',
+  issuedOn: dateLabel(row.issued_on),
+})
+
 const readTime = (value) => {
   const text = String(value ?? '').trim()
   if (!text) return ''
@@ -382,6 +420,9 @@ export const registerPlanning = (app, { requireUser, requireRole }) => {
     const where = filters.length ? `WHERE ${filters.join(' AND ')}` : ''
     const [rows] = await pool.query(
       `SELECT q.id, q.notes, q.status, q.selection_json, q.event_id, DATE_FORMAT(q.created_at, '%Y-%m-%d') AS requested_on,
+        q.issued_cents, q.currency, q.conditions_text, q.issued_detail,
+        DATE_FORMAT(q.valid_until, '%Y-%m-%d') AS valid_until,
+        DATE_FORMAT(q.issued_at, '%Y-%m-%d') AS issued_on,
         e.name AS event_name, DATE_FORMAT(e.event_date, '%Y-%m-%d') AS event_date, e.guest_count,
         s.id AS service_id, s.title AS service_title, c.slug,
         client.full_name AS client_name, p.business_name, owner.full_name AS provider_name
@@ -396,24 +437,80 @@ export const registerPlanning = (app, { requireUser, requireRole }) => {
        ORDER BY q.id DESC`,
       params,
     )
-    response.json({
-      quotes: rows.map((row) => ({
-        id: row.id,
-        notes: row.notes || '',
-        status: row.status || 'recibida',
-        requestedOn: dateLabel(row.requested_on),
-        eventId: row.event_id === null || row.event_id === undefined ? null : Number(row.event_id),
-        eventName: row.event_name || '',
-        eventDate: dateLabel(row.event_date),
-        guestCount: row.guest_count === null ? null : Number(row.guest_count),
-        serviceId: row.service_id,
-        serviceTitle: row.service_title,
-        slug: row.slug,
-        clientName: row.client_name,
-        providerName: row.business_name || row.provider_name,
-        selection: selectionSummary(row.selection_json),
-      })),
+    response.json({ quotes: rows.map(toQuote) })
+  })
+
+  app.post('/api/quotes/:quoteId/issue', requireUser, requireRole('proveedor'), async (request, response) => {
+    const quoteId = Number(request.params.quoteId)
+    if (!Number.isInteger(quoteId) || quoteId < 1) {
+      response.status(400).json({ message: 'La cotización no es válida.' })
+      return
+    }
+    const issuedCents = readIssuedAmount(request.body?.amountCents)
+    if (issuedCents === undefined) {
+      response.status(400).json({ message: 'Escribe un monto mayor a cero, en pesos mexicanos.' })
+      return
+    }
+    const conditions = optionalText(request.body?.conditions, 500)
+    const detail = optionalText(request.body?.detail, 500)
+    const validUntil = readDate(request.body?.validUntil)
+    const currency = String(request.body?.currency || 'MXN').trim().toUpperCase()
+    if (conditions === null || detail === null) {
+      response.status(400).json({ message: 'Las condiciones y el detalle admiten hasta 500 caracteres.' })
+      return
+    }
+    if (validUntil === undefined) {
+      response.status(400).json({ message: 'La vigencia no es una fecha válida.' })
+      return
+    }
+    if (currency !== 'MXN') {
+      response.status(400).json({ message: 'Por ahora las cotizaciones se emiten en pesos mexicanos.' })
+      return
+    }
+    if (validUntil && validUntil < todayLabel()) {
+      response.status(400).json({ message: 'La vigencia no puede ser una fecha pasada.' })
+      return
+    }
+    const result = await withTransaction(async (connection) => {
+      const [rows] = await connection.query(
+        `SELECT q.id, q.status, s.provider_id
+         FROM quote_requests q
+         JOIN services s ON s.id = q.service_id
+         WHERE q.id = ?
+         LIMIT 1 FOR UPDATE`,
+        [quoteId],
+      )
+      const quote = rows[0]
+      if (!quote) return { status: 404, message: 'No encontramos esa cotización.' }
+      if (Number(quote.provider_id) !== Number(request.account.id)) {
+        return { status: 403, message: 'No puedes emitir cotizaciones de servicios de otro proveedor.' }
+      }
+      if (!canIssueQuote(quote.status)) return { status: 409, message: 'Esta cotización ya no se puede emitir.' }
+      await connection.query(
+        `UPDATE quote_requests
+         SET status = 'emitida', issued_cents = ?, currency = ?, conditions_text = ?, valid_until = ?, issued_detail = ?, issued_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+        [issuedCents, currency, conditions, validUntil, detail, quote.id],
+      )
+      return {
+        ok: true,
+        quote: {
+          id: quote.id,
+          status: 'emitida',
+          issuedCents,
+          currency,
+          conditions,
+          validUntil,
+          issuedDetail: detail,
+          issuedOn: todayLabel(),
+        },
+      }
     })
+    if (typeof result.status === 'number') {
+      response.status(result.status).json({ message: result.message })
+      return
+    }
+    response.json(result)
   })
 
   app.post('/api/quotes/:quoteId/accept', requireUser, requireRole('cliente'), async (request, response) => {
@@ -425,7 +522,9 @@ export const registerPlanning = (app, { requireUser, requireRole }) => {
     try {
       const result = await withTransaction(async (connection) => {
         const [rows] = await connection.query(
-          `SELECT q.id, q.status, q.event_id, q.service_id, q.client_id, q.selection_json, pi.estimated_cents
+          `SELECT q.id, q.status, q.event_id, q.service_id, q.client_id, q.selection_json,
+            q.issued_cents, q.conditions_text, DATE_FORMAT(q.valid_until, '%Y-%m-%d') AS valid_until,
+            pi.estimated_cents
            FROM quote_requests q
            LEFT JOIN planner_items pi ON pi.client_id = q.client_id AND pi.event_id = q.event_id AND pi.service_id = q.service_id
            WHERE q.id = ? AND q.client_id = ?
@@ -439,7 +538,14 @@ export const registerPlanning = (app, { requireUser, requireRole }) => {
         if (quote.status === 'rechazada' || quote.status === 'cancelada') {
           return { status: 409, message: 'No puedes aceptar una cotización rechazada o cancelada.' }
         }
-        const amountCents = quote.estimated_cents === null ? null : Number(quote.estimated_cents)
+        const issuedCents = quote.issued_cents === null || quote.issued_cents === undefined ? null : Number(quote.issued_cents)
+        const estimatedCents = quote.estimated_cents === null || quote.estimated_cents === undefined ? null : Number(quote.estimated_cents)
+        const amountCents = issuedCents !== null ? issuedCents : estimatedCents
+        const validUntil = dateLabel(quote.valid_until)
+        if (issuedCents !== null && validUntil && validUntil < todayLabel()) {
+          return { status: 409, message: 'Esta cotización venció. Pide al proveedor que emita una vigencia nueva.' }
+        }
+        const conditions = (String(quote.conditions_text || '').trim() || String(quote.selection_json || '')).slice(0, 500)
         const [existing] = await connection.query(
           'SELECT id FROM service_contracts WHERE client_id = ? AND event_id = ? AND service_id = ? LIMIT 1 FOR UPDATE',
           [request.account.id, quote.event_id, quote.service_id],
@@ -448,7 +554,7 @@ export const registerPlanning = (app, { requireUser, requireRole }) => {
         await connection.query(
           `INSERT INTO service_contracts (client_id, event_id, service_id, quote_id, amount_cents, conditions_text, status)
            VALUES (?, ?, ?, ?, ?, ?, 'vigente')`,
-          [request.account.id, quote.event_id, quote.service_id, quote.id, amountCents, quote.selection_json || ''],
+          [request.account.id, quote.event_id, quote.service_id, quote.id, amountCents, conditions],
         )
         await connection.query(`UPDATE quote_requests SET status = 'aceptada' WHERE id = ?`, [quote.id])
         return { ok: true, amountCents, eventId: Number(quote.event_id), serviceId: Number(quote.service_id) }

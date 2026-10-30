@@ -109,6 +109,12 @@ export type QuoteRecord = {
   clientName: string
   providerName: string
   selection: SavedSelection | null
+  issuedCents: number | null
+  currency: string
+  conditions: string
+  validUntil: string | null
+  issuedDetail: string
+  issuedOn: string | null
 }
 
 export type ServiceContract = {
@@ -211,6 +217,20 @@ export const requestQuoteModification = (quoteId: number, notes: string) =>
     body: JSON.stringify({ notes }),
   })
 
+export type IssueQuoteInput = {
+  amountCents: number
+  conditions: string
+  detail: string
+  validUntil: string | null
+  currency: 'MXN'
+}
+
+export const issueQuote = (quoteId: number, input: IssueQuoteInput) =>
+  requestJson<{ ok: boolean }>(`/api/quotes/${quoteId}/issue`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+
 export const fetchContracts = () => requestJson<{ contracts: ServiceContract[] }>('/api/contracts')
 
 export const ACTIVE_EVENT_KEY = 'eventia-active-event'
@@ -269,6 +289,20 @@ export const priceModeLabel = (mode: PriceMode) => {
   if (mode === 'fijo') return 'Precio fijo'
   if (mode === 'desde') return 'Precio desde'
   return 'Sujeto a cotización'
+}
+
+export const formatQuoteAmount = (priceCents: number, currency = 'MXN') => {
+  const hasCents = priceCents % 100 !== 0
+  try {
+    return new Intl.NumberFormat('es-MX', {
+      style: 'currency',
+      currency,
+      minimumFractionDigits: hasCents ? 2 : 0,
+      maximumFractionDigits: hasCents ? 2 : 0,
+    }).format(priceCents / 100)
+  } catch {
+    return formatPrice(priceCents)
+  }
 }
 
 export const formatEventDate = (value: string | null) => {

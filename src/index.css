@@ -572,6 +572,30 @@ footer { background: #0d1830; color: white; padding: 70px 7% 25px; }.footer-main
 .planning-row { grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; }
 .planning-row strong, .planning-event h3 { display: block; font-size: 16px; }
 .planning-event h3 { margin: 0; }
+.quote-card { display: grid; gap: 12px; padding: 18px; border: 1px solid var(--line); border-radius: 18px; background: var(--white); }
+.quote-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.quote-card-head h3 { margin: 0; font-size: 20px; letter-spacing: -.03em; font-weight: 600; color: var(--navy); }
+.quote-meta { margin: 4px 0 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
+.quote-pill { flex: none; border-radius: 999px; padding: 6px 12px; font-size: 12px; font-weight: 800; letter-spacing: .02em; background: #fff7e5; color: #b7791f; }
+.quote-pill.is-emitida { background: var(--violet-light); color: #4d3eb8; }
+.quote-pill.is-aceptada { background: #eaf8f3; color: var(--green); }
+.quote-pill.is-rechazada { background: #fff0ed; color: #9f2d2d; }
+.quote-pill.is-revision { background: #fff0ed; color: var(--coral); }
+.quote-offer { display: grid; gap: 6px; padding: 16px 18px; border-radius: 16px; background: var(--violet-light); border: 1px solid color-mix(in srgb, var(--violet) 24%, white); }
+.quote-offer.is-waiting { background: var(--cream); border-color: #e7dfd4; }
+.quote-offer.is-expired { background: #fff7e5; border-color: #f3e2b8; }
+.quote-offer span { font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--violet); }
+.quote-offer.is-waiting span { color: var(--coral); }
+.quote-offer.is-expired span { color: #b7791f; }
+.quote-offer strong { font-size: 28px; line-height: 1.1; letter-spacing: -.04em; font-weight: 600; color: var(--navy); }
+.planning-panel .quote-offer p, .quote-offer p, .eh-dialog .quote-offer p { margin: 0; color: var(--navy-soft); font-size: 14px; line-height: 1.55; }
+.quote-offer small { color: var(--muted); font-size: 13px; line-height: 1.45; }
+.quote-issue { padding-top: 4px; }
+.quote-issue-grid { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(160px, .7fr); gap: 12px; }
+.quote-issue-grid > div { display: grid; gap: 8px; align-content: start; }
+.quote-feedback { margin: 0; border-radius: 12px; padding: 10px 12px; font-size: 14px; line-height: 1.5; }
+.quote-feedback.is-error { color: #9f2d2d; background: #fff0ed; }
+.quote-feedback.is-ok { color: var(--green); background: #eaf8f3; }
 .venue-page :focus-visible, .venue-dialog :focus-visible, .planning-panel :focus-visible { outline: 2px solid var(--violet); outline-offset: 3px; }
 .banquet-grid, .banquet-menu { display: grid; gap: 10px; }
 .banquet-choice { display: grid; gap: 6px; width: 100%; text-align: left; border: 1px solid var(--line); border-radius: 16px; padding: 14px; background: var(--white); color: var(--navy); cursor: pointer; }
@@ -604,6 +628,9 @@ footer { background: #0d1830; color: white; padding: 70px 7% 25px; }.footer-main
   .venue-price { position: static; }
   .venue-page { padding: 12px 20px 64px; }
   .planning-row { grid-template-columns: 1fr; }
+  .quote-card-head { flex-direction: column; }
+  .quote-issue-grid { grid-template-columns: 1fr; }
+  .quote-offer strong { font-size: 24px; }
   .decor-layout { grid-template-columns: 1fr; }
 }
 

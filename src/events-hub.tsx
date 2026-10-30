@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { CatalogError, formatPrice } from './catalog-api'
+import { QuoteOffer } from './client-planning'
 import {
   acceptQuote,
   createEvent,
@@ -8,6 +9,7 @@ import {
   fetchPlanner,
   fetchQuotes,
   formatEventDate,
+  formatQuoteAmount,
   readActiveEventId,
   rejectQuote,
   removePlannerItem,
@@ -98,6 +100,7 @@ const quoteStatusLabel = (status: string) => {
   if (status === 'aceptada') return 'Aceptada'
   if (status === 'rechazada') return 'Rechazada'
   if (status === 'modificacion_solicitada') return 'Modificación solicitada'
+  if (status === 'emitida') return 'Cotización emitida'
   if (status === 'cotizada') return 'Cotizada'
   return 'Solicitud enviada'
 }
@@ -211,7 +214,7 @@ export const EventsHub = ({ onNavigate }: EventsHubProps) => {
       if (quote.status === 'aceptada') current.status = 'contratado'
       else if (quote.status === 'rechazada') current.status = 'rechazado'
       else if (quote.status === 'cancelada') current.status = 'cancelado'
-      else if (quote.status === 'cotizada') current.status = 'cotizado'
+      else if (quote.status === 'emitida' || quote.status === 'cotizada') current.status = 'cotizado'
       else if (quote.status === 'modificacion_solicitada') current.status = 'cotizado'
       else current.status = current.status === 'considerado' ? 'solicitado' : current.status
       map.set(quote.serviceId, current)
@@ -249,7 +252,7 @@ export const EventsHub = ({ onNavigate }: EventsHubProps) => {
     if (filter === 'all') return true
     if (filter === 'considerado') return service.status === 'considerado'
     if (filter === 'solicitado') return service.status === 'solicitado' || service.status === 'cotizado'
-    if (filter === 'cotizado') return service.status === 'cotizado' || (service.quote && ['recibida', 'cotizada', 'modificacion_solicitada'].includes(service.quote.status))
+    if (filter === 'cotizado') return service.status === 'cotizado' || (service.quote && ['recibida', 'cotizada', 'emitida', 'modificacion_solicitada'].includes(service.quote.status))
     if (filter === 'contratado') return service.status === 'contratado'
     return true
   })
@@ -268,7 +271,7 @@ export const EventsHub = ({ onNavigate }: EventsHubProps) => {
     all: services.length,
     considerado: services.filter((item) => item.status === 'considerado').length,
     solicitado: services.filter((item) => item.status === 'solicitado' || item.status === 'cotizado').length,
-    cotizado: services.filter((item) => item.quote && ['recibida', 'cotizada', 'modificacion_solicitada'].includes(item.quote.status)).length,
+    cotizado: services.filter((item) => item.quote && ['recibida', 'cotizada', 'emitida', 'modificacion_solicitada'].includes(item.quote.status)).length,
     contratado: services.filter((item) => item.status === 'contratado').length,
   }
 
@@ -517,9 +520,11 @@ export const EventsHub = ({ onNavigate }: EventsHubProps) => {
                           <strong className="mp-price">
                             {service.contractedCents != null
                               ? `Contratado: ${formatPrice(service.contractedCents)}`
-                              : service.estimatedCents != null
-                                ? `Estimado: ${formatPrice(service.estimatedCents)}`
-                                : 'Precio a consultar'}
+                              : service.quote?.issuedCents != null
+                                ? `Cotizado: ${formatQuoteAmount(service.quote.issuedCents, service.quote.currency)}`
+                                : service.estimatedCents != null
+                                  ? `Estimado: ${formatPrice(service.estimatedCents)}`
+                                  : 'Precio a consultar'}
                           </strong>
                           <div className="mp-card-actions">
                             <button className="outline-button compact" type="button" onClick={() => onNavigate(`/categorias/${service.slug}/servicios/${service.serviceId}`)}>Ver detalle</button>
@@ -604,7 +609,8 @@ export const EventsHub = ({ onNavigate }: EventsHubProps) => {
                 <h3 id="eh-quote-dialog-title">{activeQuote.serviceTitle}</h3>
                 <p>{activeQuote.providerName} · {activeQuote.eventName || 'Sin evento'}</p>
                 <p>{quoteStatusLabel(activeQuote.status)} · {formatEventDate(activeQuote.requestedOn)}</p>
-                <p>{activeQuote.notes || 'Sin observaciones.'}</p>
+                <QuoteOffer quote={activeQuote} />
+                <p>{activeQuote.notes || 'Sin observaciones del cliente.'}</p>
                 {activeQuote.selection ? <p>{selectionText(activeQuote.selection)}</p> : null}
                 {activeQuote.status !== 'aceptada' && activeQuote.status !== 'rechazada' && activeQuote.status !== 'cancelada' ? (
                   <div className="mp-card-actions">

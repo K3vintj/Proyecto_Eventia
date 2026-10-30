@@ -623,6 +623,13 @@ const ensurePlanningColumns = async () => {
   }
   await addColumn('planner_items', 'selection_json', 'TEXT NULL')
   await addColumn('quote_requests', 'selection_json', 'TEXT NULL')
+  await addColumn('quote_requests', 'issued_cents', 'INT UNSIGNED NULL')
+  await addColumn('quote_requests', 'currency', "CHAR(3) NOT NULL DEFAULT 'MXN'")
+  await addColumn('quote_requests', 'conditions_text', "VARCHAR(500) NOT NULL DEFAULT ''")
+  await addColumn('quote_requests', 'valid_until', 'DATE NULL')
+  await addColumn('quote_requests', 'issued_detail', "VARCHAR(500) NOT NULL DEFAULT ''")
+  await addColumn('quote_requests', 'issued_at', 'DATETIME NULL')
+  await pool.query("ALTER TABLE quote_requests MODIFY COLUMN status VARCHAR(40) NOT NULL DEFAULT 'recibida'")
   await addColumn('service_images', 'package_id', 'INT UNSIGNED NULL')
   if (!(await indexExists('service_images', 'service_images_package'))) {
     await pool.query('ALTER TABLE service_images ADD CONSTRAINT service_images_package FOREIGN KEY (package_id) REFERENCES banquet_packages (id) ON DELETE CASCADE')
