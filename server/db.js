@@ -629,7 +629,38 @@ const ensurePlanningColumns = async () => {
   await addColumn('quote_requests', 'valid_until', 'DATE NULL')
   await addColumn('quote_requests', 'issued_detail', "VARCHAR(500) NOT NULL DEFAULT ''")
   await addColumn('quote_requests', 'issued_at', 'DATETIME NULL')
+  await addColumn('quote_requests', 'current_version', 'INT UNSIGNED NULL')
   await pool.query("ALTER TABLE quote_requests MODIFY COLUMN status VARCHAR(40) NOT NULL DEFAULT 'recibida'")
+  await pool.query(`CREATE TABLE IF NOT EXISTS quote_versions (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    quote_id INT UNSIGNED NOT NULL,
+    version_number INT UNSIGNED NOT NULL,
+    issued_cents INT UNSIGNED NOT NULL,
+    currency CHAR(3) NOT NULL DEFAULT 'MXN',
+    conditions_text VARCHAR(500) NOT NULL DEFAULT '',
+    valid_until DATE NULL,
+    issued_detail VARCHAR(500) NOT NULL DEFAULT '',
+    author_id INT UNSIGNED NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY quote_version_number (quote_id, version_number),
+    CONSTRAINT quote_version_quote FOREIGN KEY (quote_id) REFERENCES quote_requests (id) ON DELETE CASCADE,
+    CONSTRAINT quote_version_author FOREIGN KEY (author_id) REFERENCES users (id) ON DELETE CASCADE
+  )`)
+  await pool.query(
+    `INSERT INTO quote_versions (quote_id, version_number, issued_cents, currency, conditions_text, valid_until, issued_detail, author_id, created_at)
+     SELECT q.id, 1, q.issued_cents, COALESCE(q.currency, 'MXN'), q.conditions_text, q.valid_until, q.issued_detail, s.provider_id, COALESCE(q.issued_at, q.created_at)
+     FROM quote_requests q
+     JOIN services s ON s.id = q.service_id
+     WHERE q.issued_cents IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM quote_versions v WHERE v.quote_id = q.id)`,
+  )
+  await pool.query(
+    `UPDATE quote_requests q
+     SET current_version = 1
+     WHERE q.issued_cents IS NOT NULL
+       AND q.current_version IS NULL
+       AND EXISTS (SELECT 1 FROM quote_versions v WHERE v.quote_id = q.id AND v.version_number = 1)`,
+  )
   await addColumn('service_images', 'package_id', 'INT UNSIGNED NULL')
   if (!(await indexExists('service_images', 'service_images_package'))) {
     await pool.query('ALTER TABLE service_images ADD CONSTRAINT service_images_package FOREIGN KEY (package_id) REFERENCES banquet_packages (id) ON DELETE CASCADE')
@@ -660,6 +691,10 @@ const ensurePlanningColumns = async () => {
     CONSTRAINT contract_service FOREIGN KEY (service_id) REFERENCES services (id) ON DELETE CASCADE,
     CONSTRAINT contract_quote FOREIGN KEY (quote_id) REFERENCES quote_requests (id) ON DELETE SET NULL
   )`)
+  await addColumn('service_contracts', 'quote_version_id', 'INT UNSIGNED NULL')
+  if (!(await indexExists('service_contracts', 'contract_quote_version'))) {
+    await pool.query('ALTER TABLE service_contracts ADD CONSTRAINT contract_quote_version FOREIGN KEY (quote_version_id) REFERENCES quote_versions (id) ON DELETE SET NULL')
+  }
   if (!(await indexExists('service_images', 'service_images_style'))) {
     await pool.query('ALTER TABLE service_images ADD CONSTRAINT service_images_style FOREIGN KEY (style_id) REFERENCES decoration_styles (id) ON DELETE SET NULL')
   }

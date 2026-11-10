@@ -100,7 +100,7 @@ export const QuoteOffer = ({ quote, audience = 'client' }: { quote: QuoteRecord;
   const expired = isQuoteExpired(quote.validUntil)
   return (
     <div className={`quote-offer${expired ? ' is-expired' : ''}`}>
-      <span>Cotización emitida · {quote.currency || 'MXN'}</span>
+      <span>{quote.currentVersion ? `Versión ${quote.currentVersion} vigente` : 'Cotización emitida'} · {quote.currency || 'MXN'}</span>
       <strong>{formatQuoteAmount(quote.issuedCents, quote.currency)}</strong>
       <p>{quote.conditions || 'Sin condiciones adicionales.'}</p>
       {quote.issuedDetail ? <p>{quote.issuedDetail}</p> : null}
@@ -108,6 +108,34 @@ export const QuoteOffer = ({ quote, audience = 'client' }: { quote: QuoteRecord;
         {quote.validUntil ? `Vigente hasta ${formatEventDate(quote.validUntil)}` : 'Sin fecha de vigencia'}
         {expired ? ' · Esta vigencia ya venció' : ''}
       </small>
+    </div>
+  )
+}
+
+export const QuoteHistory = ({ quote }: { quote: QuoteRecord }) => {
+  const previous = (quote.versions || []).filter((version) => !version.isCurrent)
+  if (!quote.currentVersion && previous.length === 0) return null
+  return (
+    <div className="quote-history">
+      {quote.currentVersion ? <p className="quote-meta">La versión {quote.currentVersion} es la única que se puede contratar.</p> : null}
+      {previous.length > 0 ? (
+        <details>
+          <summary>Versiones anteriores ({previous.length})</summary>
+          <ol>
+            {previous.map((version) => (
+              <li key={version.id}>
+                <strong>Versión {version.number}</strong>
+                <span>{formatQuoteAmount(version.issuedCents, version.currency)}</span>
+                <small>
+                  {version.conditions || 'Sin condiciones adicionales.'}
+                  {version.issuedDetail ? ` · ${version.issuedDetail}` : ''}
+                  {version.validUntil ? ` · hasta ${formatEventDate(version.validUntil)}` : ''}
+                </small>
+              </li>
+            ))}
+          </ol>
+        </details>
+      ) : null}
     </div>
   )
 }
@@ -270,8 +298,8 @@ const QuoteList = ({ title, hint, empty, mode }: { title: string; hint: string; 
         currency: 'MXN',
       })
       const successText = quote.status === 'emitida'
-        ? 'Cotización actualizada. El cliente ya ve el monto vigente.'
-        : 'Cotización emitida. El cliente ya puede ver monto y condiciones.'
+        ? 'Cotización actualizada. La versión anterior queda solo de consulta.'
+        : 'Cotización emitida. Quedó registrada como la versión vigente.'
       setFeedback({ id: quote.id, kind: 'ok', text: successText })
       try {
         const result = await fetchQuotes()
@@ -310,6 +338,7 @@ const QuoteList = ({ title, hint, empty, mode }: { title: string; hint: string; 
               <span className={`quote-pill ${statusClass(quote.status)}`}>{statusLabel(quote.status)}</span>
             </div>
             <QuoteOffer quote={quote} audience={mode} />
+            <QuoteHistory quote={quote} />
             <p className="quote-meta">{quote.notes || 'Sin observaciones del cliente.'}</p>
             {asked ? <p className="quote-meta">Selección solicitada: {asked}</p> : null}
             <p className="quote-meta">Solicitada el {formatEventDate(quote.requestedOn)}</p>

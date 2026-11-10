@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { CatalogError, formatPrice } from './catalog-api'
-import { QuoteOffer } from './client-planning'
+import { QuoteHistory, QuoteOffer } from './client-planning'
 import {
   acceptBlockReason,
   acceptQuote,
@@ -335,10 +335,11 @@ export const EventsHub = ({ onNavigate }: EventsHubProps) => {
   const handleAccept = async (quote: QuoteRecord) => {
     if (!canAcceptQuote(quote) || quote.issuedCents === null) return
     const amount = formatQuoteAmount(quote.issuedCents, quote.currency)
-    if (!window.confirm(`Al aceptar se contratará este servicio por ${amount}. ¿Continuar?`)) return
+    const versionLabel = quote.currentVersion ? `versión ${quote.currentVersion}` : 'versión vigente'
+    if (!window.confirm(`Al aceptar se contratará este servicio por ${amount}, ${versionLabel}. ¿Continuar?`)) return
     setStatus('')
     try {
-      await acceptQuote(quote.id)
+      await acceptQuote(quote.id, quote.currentVersion)
       setStatus('Cotización aceptada. Contratación registrada.')
       setModal(null)
       setActiveQuote(null)
@@ -614,6 +615,7 @@ export const EventsHub = ({ onNavigate }: EventsHubProps) => {
                 <p>{activeQuote.providerName} · {activeQuote.eventName || 'Sin evento'}</p>
                 <p>{quoteStatusLabel(activeQuote.status)} · {formatEventDate(activeQuote.requestedOn)}</p>
                 <QuoteOffer quote={activeQuote} />
+                <QuoteHistory quote={activeQuote} />
                 <p>{activeQuote.notes || 'Sin observaciones del cliente.'}</p>
                 {activeQuote.selection ? <p>{selectionText(activeQuote.selection)}</p> : null}
                 {activeQuote.status !== 'aceptada' && activeQuote.status !== 'rechazada' && activeQuote.status !== 'cancelada' ? (

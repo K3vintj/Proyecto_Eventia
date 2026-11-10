@@ -597,6 +597,13 @@ footer { background: #0d1830; color: white; padding: 70px 7% 25px; }.footer-main
 .quote-feedback.is-error { color: #9f2d2d; background: #fff0ed; }
 .quote-feedback.is-ok { color: var(--green); background: #eaf8f3; }
 .quote-feedback.is-wait { color: var(--navy); background: var(--cream); }
+.quote-history { display: grid; gap: 8px; }
+.quote-history summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; color: var(--violet); font-size: 13px; font-weight: 800; }
+.quote-history ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.quote-history li { display: grid; gap: 2px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.quote-history li strong { font-size: 13px; color: var(--muted); }
+.quote-history li span { font-size: 16px; font-weight: 700; color: var(--navy); }
+.quote-history li small { color: var(--muted); font-size: 13px; line-height: 1.45; }
 .venue-page :focus-visible, .venue-dialog :focus-visible, .planning-panel :focus-visible { outline: 2px solid var(--violet); outline-offset: 3px; }
 .banquet-grid, .banquet-menu { display: grid; gap: 10px; }
 .banquet-choice { display: grid; gap: 6px; width: 100%; text-align: left; border: 1px solid var(--line); border-radius: 16px; padding: 14px; background: var(--white); color: var(--navy); cursor: pointer; }

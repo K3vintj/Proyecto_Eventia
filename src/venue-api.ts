@@ -94,6 +94,18 @@ export type PlannerEvent = ClientEvent & {
   }[]
 }
 
+export type QuoteVersion = {
+  id: number
+  number: number
+  issuedCents: number
+  currency: string
+  conditions: string
+  validUntil: string | null
+  issuedDetail: string
+  issuedOn: string | null
+  isCurrent: boolean
+}
+
 export type QuoteRecord = {
   id: number
   notes: string
@@ -115,6 +127,8 @@ export type QuoteRecord = {
   validUntil: string | null
   issuedDetail: string
   issuedOn: string | null
+  currentVersion: number | null
+  versions: QuoteVersion[]
 }
 
 export type ServiceContract = {
@@ -205,8 +219,11 @@ export const updateEvent = (eventId: number, input: EventInput) =>
 export const removePlannerItem = (eventId: number, serviceId: number) =>
   requestJson<{ ok: boolean; budgetCents: number }>(`/api/planner/items/${serviceId}?eventId=${eventId}`, { method: 'DELETE' })
 
-export const acceptQuote = (quoteId: number) =>
-  requestJson<{ ok: boolean; amountCents: number | null; eventId: number; serviceId: number }>(`/api/quotes/${quoteId}/accept`, { method: 'POST' })
+export const acceptQuote = (quoteId: number, versionNumber?: number | null) =>
+  requestJson<{ ok: boolean; amountCents: number | null; versionNumber?: number; eventId: number; serviceId: number }>(`/api/quotes/${quoteId}/accept`, {
+    method: 'POST',
+    body: JSON.stringify({ versionNumber: versionNumber ?? null }),
+  })
 
 export const rejectQuote = (quoteId: number) =>
   requestJson<{ ok: boolean }>(`/api/quotes/${quoteId}/reject`, { method: 'POST' })

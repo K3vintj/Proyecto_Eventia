@@ -132,7 +132,50 @@ const toQuote = (row) => ({
   validUntil: dateLabel(row.valid_until),
   issuedDetail: row.issued_detail || '',
   issuedOn: dateLabel(row.issued_on),
+  currentVersion: row.current_version === null || row.current_version === undefined ? null : Number(row.current_version),
+  versions: [],
 })
+
+const toVersion = (row, currentVersion) => ({
+  id: Number(row.id),
+  number: Number(row.version_number),
+  issuedCents: Number(row.issued_cents),
+  currency: row.currency || 'MXN',
+  conditions: row.conditions_text || '',
+  validUntil: dateLabel(row.valid_until),
+  issuedDetail: row.issued_detail || '',
+  issuedOn: dateLabel(row.issued_on),
+  isCurrent: Number(row.version_number) === Number(currentVersion),
+})
+
+const attachVersions = async (quotes) => {
+  if (!quotes.length) return quotes
+  const ids = quotes.map((quote) => quote.id)
+  const [rows] = await pool.query(
+    `SELECT id, quote_id, version_number, issued_cents, currency, conditions_text, issued_detail,
+      DATE_FORMAT(valid_until, '%Y-%m-%d') AS valid_until,
+      DATE_FORMAT(created_at, '%Y-%m-%d') AS issued_on
+     FROM quote_versions
+     WHERE quote_id IN (${ids.map(() => '?').join(',')})
+     ORDER BY quote_id, version_number DESC`,
+    ids,
+  )
+  const grouped = new Map()
+  for (const row of rows) {
+    const list = grouped.get(row.quote_id) || []
+    list.push(row)
+    grouped.set(row.quote_id, list)
+  }
+  return quotes.map((quote) => {
+    const versions = (grouped.get(quote.id) || []).map((row) => toVersion(row, quote.currentVersion))
+    const current = versions.find((version) => version.isCurrent) || versions[0] || null
+    return {
+      ...quote,
+      currentVersion: current ? current.number : quote.currentVersion,
+      versions,
+    }
+  })
+}
 
 const readTime = (value) => {
   const text = String(value ?? '').trim()
@@ -419,7 +462,7 @@ export const registerPlanning = (app, { requireUser, requireRole }) => {
     }
     const where = filters.length ? `WHERE ${filters.join(' AND ')}` : ''
     const [rows] = await pool.query(
-      `SELECT q.id, q.notes, q.status, q.selection_json, q.event_id, DATE_FORMAT(q.created_at, '%Y-%m-%d') AS requested_on,
+      `SELECT q.id, q.notes, q.status, q.selection_json, q.event_id, q.current_version, DATE_FORMAT(q.created_at, '%Y-%m-%d') AS requested_on,
         q.issued_cents, q.currency, q.conditions_text, q.issued_detail,
         DATE_FORMAT(q.valid_until, '%Y-%m-%d') AS valid_until,
         DATE_FORMAT(q.issued_at, '%Y-%m-%d') AS issued_on,
@@ -437,7 +480,7 @@ export const registerPlanning = (app, { requireUser, requireRole }) => {
        ORDER BY q.id DESC`,
       params,
     )
-    response.json({ quotes: rows.map(toQuote) })
+    response.json({ quotes: await attachVersions(rows.map(toQuote)) })
   })
 
   app.post('/api/quotes/:quoteId/issue', requireUser, requireRole('proveedor'), async (request, response) => {
@@ -486,11 +529,21 @@ export const registerPlanning = (app, { requireUser, requireRole }) => {
         return { status: 403, message: 'No puedes emitir cotizaciones de servicios de otro proveedor.' }
       }
       if (!canIssueQuote(quote.status)) return { status: 409, message: 'Esta cotización ya no se puede emitir.' }
+      const [counts] = await connection.query(
+        'SELECT COALESCE(MAX(version_number), 0) AS latest FROM quote_versions WHERE quote_id = ?',
+        [quote.id],
+      )
+      const versionNumber = Number(counts[0]?.latest || 0) + 1
+      const [created] = await connection.query(
+        `INSERT INTO quote_versions (quote_id, version_number, issued_cents, currency, conditions_text, valid_until, issued_detail, author_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [quote.id, versionNumber, issuedCents, currency, conditions, validUntil, detail, request.account.id],
+      )
       await connection.query(
         `UPDATE quote_requests
-         SET status = 'emitida', issued_cents = ?, currency = ?, conditions_text = ?, valid_until = ?, issued_detail = ?, issued_at = CURRENT_TIMESTAMP
+         SET status = 'emitida', issued_cents = ?, currency = ?, conditions_text = ?, valid_until = ?, issued_detail = ?, issued_at = CURRENT_TIMESTAMP, current_version = ?
          WHERE id = ?`,
-        [issuedCents, currency, conditions, validUntil, detail, quote.id],
+        [issuedCents, currency, conditions, validUntil, detail, versionNumber, quote.id],
       )
       return {
         ok: true,
@@ -503,6 +556,8 @@ export const registerPlanning = (app, { requireUser, requireRole }) => {
           validUntil,
           issuedDetail: detail,
           issuedOn: todayLabel(),
+          currentVersion: versionNumber,
+          versionId: created.insertId,
         },
       }
     })
@@ -521,9 +576,9 @@ export const registerPlanning = (app, { requireUser, requireRole }) => {
     }
     try {
       const result = await withTransaction(async (connection) => {
+        const requestedVersion = request.body?.versionNumber
         const [rows] = await connection.query(
-          `SELECT q.id, q.status, q.event_id, q.service_id, q.client_id,
-            q.issued_cents, q.conditions_text, DATE_FORMAT(q.valid_until, '%Y-%m-%d') AS valid_until
+          `SELECT q.id, q.status, q.event_id, q.service_id, q.client_id, q.current_version
            FROM quote_requests q
            WHERE q.id = ? AND q.client_id = ?
            LIMIT 1 FOR UPDATE`,
@@ -542,29 +597,44 @@ export const registerPlanning = (app, { requireUser, requireRole }) => {
         if (quote.status === 'modificacion_solicitada') {
           return { status: 409, message: 'Pediste cambios. Espera la nueva cotización del proveedor antes de contratar.' }
         }
-        const issuedCents = quote.issued_cents === null || quote.issued_cents === undefined ? null : Number(quote.issued_cents)
         const isIssued = quote.status === 'emitida' || quote.status === 'cotizada'
-        if (!isIssued || issuedCents === null) {
+        if (!isIssued) {
           return { status: 409, message: 'Solo puedes contratar una cotización emitida, con monto formal del proveedor.' }
         }
-        const validUntil = dateLabel(quote.valid_until)
+        const [versions] = await connection.query(
+          `SELECT id, version_number, issued_cents, conditions_text, DATE_FORMAT(valid_until, '%Y-%m-%d') AS valid_until
+           FROM quote_versions
+           WHERE quote_id = ?
+           ORDER BY version_number DESC
+           LIMIT 1`,
+          [quote.id],
+        )
+        const current = versions[0]
+        if (!current || quote.current_version === null || Number(current.version_number) !== Number(quote.current_version)) {
+          return { status: 409, message: 'Esta cotización no tiene una versión vigente.' }
+        }
+        if (requestedVersion !== undefined && requestedVersion !== null && requestedVersion !== '' && Number(requestedVersion) !== Number(current.version_number)) {
+          return { status: 409, message: 'Esa versión ya no está vigente. Solo puedes aceptar la versión actual.' }
+        }
+        const issuedCents = Number(current.issued_cents)
+        const validUntil = dateLabel(current.valid_until)
         if (validUntil && validUntil < todayLabel()) {
           return { status: 409, message: 'Esta cotización venció. Pide al proveedor que emita una vigencia nueva.' }
         }
         const amountCents = issuedCents
-        const conditions = String(quote.conditions_text || '').trim().slice(0, 500)
+        const conditions = String(current.conditions_text || '').trim().slice(0, 500)
         const [existing] = await connection.query(
           'SELECT id FROM service_contracts WHERE client_id = ? AND event_id = ? AND service_id = ? LIMIT 1 FOR UPDATE',
           [request.account.id, quote.event_id, quote.service_id],
         )
         if (existing[0]) return { status: 409, message: 'Este servicio ya está contratado en el evento.' }
         await connection.query(
-          `INSERT INTO service_contracts (client_id, event_id, service_id, quote_id, amount_cents, conditions_text, status)
-           VALUES (?, ?, ?, ?, ?, ?, 'vigente')`,
-          [request.account.id, quote.event_id, quote.service_id, quote.id, amountCents, conditions],
+          `INSERT INTO service_contracts (client_id, event_id, service_id, quote_id, quote_version_id, amount_cents, conditions_text, status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'vigente')`,
+          [request.account.id, quote.event_id, quote.service_id, quote.id, current.id, amountCents, conditions],
         )
         await connection.query(`UPDATE quote_requests SET status = 'aceptada' WHERE id = ?`, [quote.id])
-        return { ok: true, amountCents, eventId: Number(quote.event_id), serviceId: Number(quote.service_id) }
+        return { ok: true, amountCents, versionNumber: Number(current.version_number), eventId: Number(quote.event_id), serviceId: Number(quote.service_id) }
       })
       if (result.status) {
         response.status(result.status).json({ message: result.message })
